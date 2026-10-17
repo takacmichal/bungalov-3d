@@ -18,6 +18,11 @@
   #rooms button:hover, #rooms button.active { background:rgba(255,255,255,.12); }
   #rooms .sep { height:1px; background:rgba(255,255,255,.12); margin:6px 4px; }
   #toggle { display:none; }
+  #loader.overlay { background:rgba(17,17,17,.6); }
+  #style { position:fixed; top:12px; right:12px; display:flex; gap:2px; background:var(--panel); border-radius:10px; padding:4px; backdrop-filter:blur(8px); z-index:3; }
+  #style button { background:none; border:0; color:var(--fg); padding:7px 12px; border-radius:7px; cursor:pointer; font:inherit; }
+  #style button:hover { background:rgba(255,255,255,.12); }
+  #style button.active { background:var(--fg); color:var(--bg); }
   #help { position:fixed; bottom:12px; left:50%; transform:translateX(-50%); background:var(--panel); padding:8px 14px; border-radius:20px; color:var(--muted); font-size:13px; white-space:nowrap; backdrop-filter:blur(8px); }
   @media (max-width:640px) {
     #rooms { width:auto; right:12px; display:none; }
@@ -32,6 +37,7 @@
 <div id="loader"><div><div id="loadtext">Načítavam model…</div><div class="bar"><div class="fill" id="fill"></div></div></div></div>
 <nav id="rooms"><h1>Miestnosti</h1><div id="list"></div></nav>
 <button id="toggle">☰ Miestnosti</button>
+<div id="style"><button data-style="povodny">Pôvodný</button><button data-style="japandi">Japandi</button></div>
 <div id="help">Ťahaj myšou = rozhliadanie · klik na podlahu = presun · WASD / šípky = chôdza · koliesko = zoom</div>
 
 <script type="importmap">
@@ -111,9 +117,35 @@ function floorBelow(x, y, z, maxRise = STEP) {
 }
 
 // ---------- load model ----------
-const fill = document.getElementById('fill');
-new GLTFLoader().load('bungalov.glb', gltf => {
-  const root = gltf.scene;
+const STYLES = { povodny: 'bungalov.glb', japandi: 'japandi/bungalov.glb' };
+let model = null, style = new URLSearchParams(location.search).get('styl') in STYLES
+  ? new URLSearchParams(location.search).get('styl') : 'povodny';
+
+function loadModel(first) {
+  const loader = document.getElementById('loader') ?? document.body.appendChild(Object.assign(
+    document.createElement('div'), { id: 'loader', className: 'overlay',
+      innerHTML: '<div><div id="loadtext">Načítavam štýl…</div><div class="bar"><div class="fill" id="fill"></div></div></div>' }));
+  const bar = loader.querySelector('.fill');
+  bar.style.width = '0';
+  new GLTFLoader().load(STYLES[style], gltf => onModel(gltf, first),
+    e => { if (e.total) bar.style.width = (100 * e.loaded / e.total) + '%'; },
+    err => { loader.querySelector('#loadtext').textContent = 'Chyba pri načítaní modelu: ' + err.message; });
+}
+
+function onModel(gltf, first) {
+  if (model) {
+    scene.remove(model);
+    model.traverse(o => {
+      if (!o.isMesh) return;
+      o.geometry.dispose();
+      for (const m of [].concat(o.material)) {
+        for (const v of Object.values(m)) if (v?.isTexture) v.dispose();
+        m.dispose();
+      }
+    });
+  }
+  walkMeshes.length = solidMeshes.length = pickMeshes.length = 0;
+  const root = model = gltf.scene;
   scene.add(root);
   root.updateMatrixWorld(true);
   const views = [];
@@ -129,12 +161,28 @@ new GLTFLoader().load('bungalov.glb', gltf => {
     walkMeshes.push(o);
     if (!NO_COLLIDE.has(coll)) solidMeshes.push(o);
   });
-  buildMenu(views);
-  const start = views.find(v => v.name === 'Cam_Front_door') ?? views[0];
-  goTo(start, true);
+  if (first) {
+    buildMenu(views);
+    const start = views.find(v => v.name === 'Cam_Front_door') ?? views[0];
+    goTo(start, true);
+  }
   document.getElementById('loader').remove();
-}, e => { if (e.total) fill.style.width = (100 * e.loaded / e.total) + '%'; },
-  err => { document.getElementById('loadtext').textContent = 'Chyba pri načítaní modelu: ' + err.message; });
+}
+
+// style switch: swaps the model in place, the camera stays where it is
+const styleBox = document.getElementById('style');
+function markStyle() {
+  styleBox.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.style === style));
+}
+styleBox.querySelectorAll('button').forEach(b => b.onclick = () => {
+  if (b.dataset.style === style || document.getElementById('loader')) return;
+  style = b.dataset.style;
+  history.replaceState(null, '', style === 'povodny' ? location.pathname : '?styl=' + style);
+  markStyle();
+  loadModel(false);
+});
+markStyle();
+loadModel(true);
 
 function labelOf(v) {
   const n = v.name.replace(/_/g, ' ');

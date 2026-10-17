@@ -3,7 +3,7 @@
 #   /Applications/Blender.app/Contents/MacOS/Blender -b Bungalov.blend --python web/export_web.py
 import bpy, bmesh, os, json, mathutils
 
-OUT = os.path.join(os.path.dirname(bpy.data.filepath), "web")
+OUT = os.environ.get("WEB_OUT") or os.path.join(os.path.dirname(bpy.data.filepath), "web")
 MAX_TEX = 1024
 SKIP_COLLS = {"_old furniture", "Lights"}
 
