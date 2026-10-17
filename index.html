@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Bungalov 3D prehliadka</title>
+<style>
+  :root { --bg:#111; --panel:rgba(20,20,22,.78); --fg:#f2f2f2; --muted:#a8a8a8; --accent:#7fc4ff; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui,-apple-system,sans-serif; overflow:hidden; }
+  canvas { display:block; touch-action:none; cursor:grab; }
+  canvas.dragging { cursor:grabbing; }
+  #loader { position:fixed; inset:0; display:grid; place-items:center; background:var(--bg); z-index:10; }
+  #loader .bar { width:min(320px,70vw); height:4px; background:#333; border-radius:2px; overflow:hidden; margin-top:12px; }
+  #loader .fill { height:100%; width:0; background:var(--accent); transition:width .2s; }
+  #rooms { position:fixed; top:12px; left:12px; background:var(--panel); border-radius:10px; padding:8px; max-height:calc(100% - 24px); overflow:auto; backdrop-filter:blur(8px); width:200px; }
+  #rooms h1 { font-size:13px; margin:4px 6px 8px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.05em; }
+  #rooms button { display:block; width:100%; text-align:left; background:none; border:0; color:var(--fg); padding:7px 8px; border-radius:6px; cursor:pointer; font:inherit; }
+  #rooms button:hover, #rooms button.active { background:rgba(255,255,255,.12); }
+  #rooms .sep { height:1px; background:rgba(255,255,255,.12); margin:6px 4px; }
+  #toggle { display:none; }
+  #help { position:fixed; bottom:12px; left:50%; transform:translateX(-50%); background:var(--panel); padding:8px 14px; border-radius:20px; color:var(--muted); font-size:13px; white-space:nowrap; backdrop-filter:blur(8px); }
+  @media (max-width:640px) {
+    #rooms { width:auto; right:12px; display:none; }
+    #rooms.open { display:block; }
+    #toggle { display:block; position:fixed; top:12px; left:12px; background:var(--panel); color:var(--fg); border:0; border-radius:8px; padding:8px 12px; font:inherit; z-index:2; }
+    #rooms.open + #toggle { display:none; }
+    #help { white-space:normal; width:calc(100% - 56px); text-align:center; border-radius:12px; }
+  }
+</style>
+</head>
+<body>
+<div id="loader"><div><div id="loadtext">Načítavam model…</div><div class="bar"><div class="fill" id="fill"></div></div></div></div>
+<nav id="rooms"><h1>Miestnosti</h1><div id="list"></div></nav>
+<button id="toggle">☰ Miestnosti</button>
+<div id="help">Ťahaj myšou = rozhliadanie · klik na podlahu = presun · WASD / šípky = chôdza · koliesko = zoom</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const EYE = 1.6, STEP = 0.4, RADIUS = 0.3, SPEED = 1.8;
+const NO_COLLIDE = new Set(['Floors', 'Site', 'Ceiling', 'Roof', 'Cameras', 'Terrace']);
+const LABELS = {
+  'Cam Living': 'Obývačka', 'Cam Living 2': 'Obývačka 2', 'Cam Living 3': 'Obývačka 3',
+  'Cam TV wall': 'Obývačka – TV stena', 'Cam Fireplace': 'Obývačka – krb', 'Cam Living to Kitchen': 'Obývačka → kuchyňa',
+  'Cam Dining to Living': 'Jedáleň', 'Cam Kitchen': 'Kuchyňa', 'Cam Kitchen Showcase': 'Kuchyňa 2',
+  'Cam Kitchen Tall wall': 'Kuchyňa – vysoká stena', 'Cam Kitchen Sink': 'Kuchyňa – drez', 'Cam Kitchen from Living': 'Kuchyňa z obývačky',
+  'Cam Bathroom': 'Kúpeľňa', 'Cam Bathroom 2': 'Kúpeľňa 2', 'Cam Bathroom 108': 'Kúpeľňa pri spálni', // GLTFLoader strips dots from node names 'Cam Bedroom': 'Spálňa', 'Cam Bedroom Wardrobe': 'Spálňa – šatník',
+  'Cam Office': 'Izba / pracovňa', 'Cam Office 2': 'Izba / pracovňa 2', 'Cam Guest': 'Hosťovská izba', 'Cam Entrance': 'Zádverie – šatník', 'Camera': 'Vstup',
+};
+const OUTSIDE = { 'Cam Exterior SW': 'Exteriér', 'Cam Cutaway': 'Pohľad zhora' };
+
+// ---------- renderer / scene ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xbfd4e6);
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 300);
+camera.rotation.order = 'YXZ';
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7d6a, 0.6));
+const sun = new THREE.DirectionalLight(0xfff2e0, 1.2);
+sun.position.set(-10, 20, 8);
+scene.add(sun);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+new THREE.TextureLoader().load('sky.jpg', tex => {
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  scene.background = tex;
+  scene.environment = pmrem.fromEquirectangular(tex).texture;
+  scene.environmentIntensity = 0.9;
+});
+
+// ---------- state ----------
+let yaw = 0, pitch = 0, flying = false;
+let tween = null;
+const walkMeshes = [], solidMeshes = [], pickMeshes = [];
+const ray = new THREE.Raycaster();
+const DOWN = new THREE.Vector3(0, -1, 0);
+
+const ring = new THREE.Mesh(
+  new THREE.RingGeometry(0.18, 0.25, 40),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthTest: false }),
+);
+ring.rotation.x = -Math.PI / 2;
+ring.renderOrder = 999;
+ring.visible = false;
+scene.add(ring);
+
+function applyView() { camera.rotation.set(pitch, yaw, 0); }
+
+function floorBelow(x, y, z, maxRise = STEP) {
+  ray.set(new THREE.Vector3(x, y + maxRise, z), DOWN);
+  ray.far = maxRise + 3;
+  const hit = ray.intersectObjects(walkMeshes, false)[0];
+  return hit ? hit.point.y : null;
+}
+
+// ---------- load model ----------
+const fill = document.getElementById('fill');
+new GLTFLoader().load('bungalov.glb', gltf => {
+  const root = gltf.scene;
+  scene.add(root);
+  root.updateMatrixWorld(true);
+  const views = [];
+  root.traverse(o => {
+    if (o.isCamera) { views.push(o); return; }
+    if (!o.isMesh) return;
+    const coll = o.userData.coll ?? o.parent?.userData.coll ?? '';
+    const name = o.name + ' ' + (o.parent?.name ?? '');
+    const isDoorLeaf = coll === 'Doors' && !/frame/i.test(name);
+    if (o.material.transmission > 0) o.material.transmission = Math.min(o.material.transmission, 0.9);
+    if (isDoorLeaf) { o.visible = false; return; } // open doorways so you can walk through
+    pickMeshes.push(o);
+    walkMeshes.push(o);
+    if (!NO_COLLIDE.has(coll)) solidMeshes.push(o);
+  });
+  buildMenu(views);
+  const start = views.find(v => v.name === 'Cam_Living' || v.name === 'Cam Living') ?? views[0];
+  goTo(start, true);
+  document.getElementById('loader').remove();
+}, e => { if (e.total) fill.style.width = (100 * e.loaded / e.total) + '%'; },
+  err => { document.getElementById('loadtext').textContent = 'Chyba pri načítaní modelu: ' + err.message; });
+
+function labelOf(v) {
+  const n = v.name.replace(/_/g, ' ');
+  return [LABELS[n] ?? OUTSIDE[n] ?? n, n in OUTSIDE];
+}
+
+function buildMenu(views) {
+  const list = document.getElementById('list');
+  const inside = [], outside = [];
+  for (const v of views) {
+    const [label, out] = labelOf(v);
+    (out ? outside : inside).push([label, v]);
+  }
+  inside.sort((a, b) => a[0].localeCompare(b[0], 'sk'));
+  const add = ([label, v]) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.onclick = () => {
+      goTo(v);
+      list.querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+      document.getElementById('rooms').classList.remove('open');
+    };
+    list.append(b);
+  };
+  inside.forEach(add);
+  list.append(Object.assign(document.createElement('div'), { className: 'sep' }));
+  outside.forEach(add);
+}
+
+function goTo(view, instant = false) {
+  const p = new THREE.Vector3(), d = new THREE.Vector3();
+  view.getWorldPosition(p);
+  view.getWorldDirection(d);
+  const [, out] = labelOf(view);
+  let tgtFly = out;
+  if (!out) {
+    const f = floorBelow(p.x, p.y - EYE, p.z, 1.2);
+    if (f !== null) p.y = f + EYE; else tgtFly = true;
+  }
+  const tYaw = Math.atan2(-d.x, -d.z), tPitch = Math.asin(THREE.MathUtils.clamp(d.y, -1, 1));
+  flying = tgtFly;
+  startTween(p, tYaw, out ? tPitch : THREE.MathUtils.clamp(tPitch, -0.35, 0.35), instant ? 0 : 1.0);
+}
+
+function startTween(pos, tYaw, tPitch, dur) {
+  let dy = tYaw - yaw;
+  dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+  if (dur === 0) { camera.position.copy(pos); yaw += dy; pitch = tPitch; applyView(); tween = null; return; }
+  tween = { from: camera.position.clone(), to: pos.clone(), y0: yaw, y1: yaw + dy, p0: pitch, p1: tPitch, t: 0, dur };
+}
+
+// ---------- pointer: drag to look, click to move ----------
+const el = renderer.domElement;
+const ndc = new THREE.Vector2();
+let drag = null;
+
+function pickFloor(cx, cy) {
+  ndc.set((cx / innerWidth) * 2 - 1, -(cy / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  ray.far = 60;
+  const hit = ray.intersectObjects(pickMeshes, false)[0];
+  if (!hit || !hit.face) return null;
+  const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+  const feet = camera.position.y - EYE;
+  if (n.y < 0.7) return null;
+  if (!flying && hit.point.y > feet + STEP) return null; // table tops, beds etc.
+  return hit.point;
+}
+
+el.addEventListener('pointerdown', e => {
+  drag = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false };
+  el.setPointerCapture(e.pointerId);
+  el.classList.add('dragging');
+});
+el.addEventListener('pointermove', e => {
+  if (drag) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.x = e.clientX; drag.y = e.clientY;
+    if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 4) drag.moved = true;
+    const k = camera.fov / innerHeight * Math.PI / 180;
+    yaw += dx * k; pitch = THREE.MathUtils.clamp(pitch + dy * k, -1.45, 1.45);
+    tween = null;
+    applyView();
+    ring.visible = false;
+    return;
+  }
+  if (e.pointerType !== 'mouse') return;
+  const p = pickFloor(e.clientX, e.clientY);
+  ring.visible = !!p;
+  if (p) ring.position.copy(p).y += 0.01;
+});
+el.addEventListener('pointerup', e => {
+  el.classList.remove('dragging');
+  const wasClick = drag && !drag.moved;
+  drag = null;
+  if (!wasClick) return;
+  const p = pickFloor(e.clientX, e.clientY);
+  if (!p) return;
+  flying = false;
+  startTween(new THREE.Vector3(p.x, p.y + EYE, p.z), yaw, THREE.MathUtils.clamp(pitch, -0.35, 0.35),
+    THREE.MathUtils.clamp(camera.position.distanceTo(p) / 5, 0.4, 1.5));
+});
+el.addEventListener('wheel', e => {
+  e.preventDefault();
+  camera.fov = THREE.MathUtils.clamp(camera.fov + e.deltaY * 0.03, 30, 90);
+  camera.updateProjectionMatrix();
+}, { passive: false });
+
+document.getElementById('toggle').onclick = () => document.getElementById('rooms').classList.add('open');
+
+// ---------- keyboard walking with collision ----------
+const keys = new Set();
+addEventListener('keydown', e => keys.add(e.code));
+addEventListener('keyup', e => keys.delete(e.code));
+addEventListener('blur', () => keys.clear());
+
+function blocked(pos, dir, dist) {
+  for (const h of [0.35, 1.1]) {
+    ray.set(new THREE.Vector3(pos.x, pos.y - EYE + h, pos.z), dir);
+    ray.far = dist + RADIUS;
+    if (ray.intersectObjects(solidMeshes, false).length) return true;
+  }
+  return false;
+}
+
+function walk(dt) {
+  const f = (keys.has('KeyW') || keys.has('ArrowUp')) - (keys.has('KeyS') || keys.has('ArrowDown'));
+  const s = (keys.has('KeyD') || keys.has('ArrowRight')) - (keys.has('KeyA') || keys.has('ArrowLeft'));
+  if (!f && !s) return;
+  tween = null;
+  if (flying) { // free fly for overview shots
+    const v = new THREE.Vector3(s, 0, -f).applyQuaternion(camera.quaternion).multiplyScalar(SPEED * 3 * dt);
+    camera.position.add(v);
+    return;
+  }
+  const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+  const move = fwd.multiplyScalar(f).add(right.multiplyScalar(s)).normalize().multiplyScalar(SPEED * dt);
+  // try full move, then slide along each axis
+  for (const m of [move, new THREE.Vector3(move.x, 0, 0), new THREE.Vector3(0, 0, move.z)]) {
+    const len = m.length();
+    if (len < 1e-5 || blocked(camera.position, m.clone().normalize(), len)) continue;
+    const n = camera.position.clone().add(m);
+    const floor = floorBelow(n.x, n.y - EYE, n.z);
+    if (floor === null) continue;
+    camera.position.set(n.x, floor + EYE, n.z);
+    break;
+  }
+}
+
+// ---------- loop ----------
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (tween) {
+    tween.t += dt / tween.dur;
+    const k = tween.t >= 1 ? 1 : 1 - Math.pow(1 - tween.t, 3);
+    camera.position.lerpVectors(tween.from, tween.to, k);
+    yaw = tween.y0 + (tween.y1 - tween.y0) * k;
+    pitch = tween.p0 + (tween.p1 - tween.p0) * k;
+    applyView();
+    if (tween.t >= 1) tween = null;
+  }
+  walk(dt);
+  renderer.render(scene, camera);
+});
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
