@@ -43,6 +43,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 const EYE = 1.6, STEP = 0.4, RADIUS = 0.3, SPEED = 1.8;
 const NO_COLLIDE = new Set(['Floors', 'Site', 'Ceiling', 'Roof', 'Cameras', 'Terrace']);
@@ -51,7 +52,8 @@ const LABELS = {
   'Cam TV wall': 'Obývačka – TV stena', 'Cam Fireplace': 'Obývačka – krb', 'Cam Living to Kitchen': 'Obývačka → kuchyňa',
   'Cam Dining to Living': 'Jedáleň', 'Cam Kitchen': 'Kuchyňa', 'Cam Kitchen Showcase': 'Kuchyňa 2',
   'Cam Kitchen Tall wall': 'Kuchyňa – vysoká stena', 'Cam Kitchen Sink': 'Kuchyňa – drez', 'Cam Kitchen from Living': 'Kuchyňa z obývačky',
-  'Cam Bathroom': 'Kúpeľňa', 'Cam Bathroom 2': 'Kúpeľňa 2', 'Cam Bathroom 108': 'Kúpeľňa pri spálni', // GLTFLoader strips dots from node names 'Cam Bedroom': 'Spálňa', 'Cam Bedroom Wardrobe': 'Spálňa – šatník',
+  'Cam Bathroom': 'Kúpeľňa', 'Cam Bathroom 2': 'Kúpeľňa 2', 'Cam Bathroom 108': 'Kúpeľňa pri spálni', // GLTFLoader strips dots from node names
+  'Cam Bedroom': 'Spálňa', 'Cam Bedroom Wardrobe': 'Spálňa – šatník',
   'Cam Office': 'Izba / pracovňa', 'Cam Office 2': 'Izba / pracovňa 2', 'Cam Guest': 'Hosťovská izba', 'Cam Entrance': 'Zádverie – šatník', 'Cam Front door': 'Pred vchodom', 'Camera': 'Vstup',
 };
 const OUTSIDE = { 'Cam Exterior SW': 'Exteriér', 'Cam Cutaway': 'Pohľad zhora' };
@@ -60,7 +62,7 @@ const OUTSIDE = { 'Cam Exterior SW': 'Exteriér', 'Cam Cutaway': 'Pohľad zhora'
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMapping = THREE.NeutralToneMapping; // keeps material colours close to Blender
 renderer.toneMappingExposure = 1.0;
 document.body.prepend(renderer.domElement);
 
@@ -68,18 +70,19 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xbfd4e6);
 const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 300);
 camera.rotation.order = 'YXZ';
-scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7d6a, 0.6));
-const sun = new THREE.DirectionalLight(0xfff2e0, 1.2);
+scene.add(new THREE.HemisphereLight(0xffffff, 0xd8d4cc, 0.5));
+const sun = new THREE.DirectionalLight(0xffffff, 1.0);
 sun.position.set(-10, 20, 8);
 scene.add(sun);
 
+// neutral studio lighting; the meadow panorama is only the backdrop (lit by it, everything turned green)
 const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.8;
 new THREE.TextureLoader().load('sky.jpg', tex => {
   tex.mapping = THREE.EquirectangularReflectionMapping;
   tex.colorSpace = THREE.SRGBColorSpace;
   scene.background = tex;
-  scene.environment = pmrem.fromEquirectangular(tex).texture;
-  scene.environmentIntensity = 0.9;
 });
 
 // ---------- state ----------
