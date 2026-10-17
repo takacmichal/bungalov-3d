@@ -52,7 +52,7 @@ const LABELS = {
   'Cam Dining to Living': 'Jedáleň', 'Cam Kitchen': 'Kuchyňa', 'Cam Kitchen Showcase': 'Kuchyňa 2',
   'Cam Kitchen Tall wall': 'Kuchyňa – vysoká stena', 'Cam Kitchen Sink': 'Kuchyňa – drez', 'Cam Kitchen from Living': 'Kuchyňa z obývačky',
   'Cam Bathroom': 'Kúpeľňa', 'Cam Bathroom 2': 'Kúpeľňa 2', 'Cam Bathroom 108': 'Kúpeľňa pri spálni', // GLTFLoader strips dots from node names 'Cam Bedroom': 'Spálňa', 'Cam Bedroom Wardrobe': 'Spálňa – šatník',
-  'Cam Office': 'Izba / pracovňa', 'Cam Office 2': 'Izba / pracovňa 2', 'Cam Guest': 'Hosťovská izba', 'Cam Entrance': 'Zádverie – šatník', 'Camera': 'Vstup',
+  'Cam Office': 'Izba / pracovňa', 'Cam Office 2': 'Izba / pracovňa 2', 'Cam Guest': 'Hosťovská izba', 'Cam Entrance': 'Zádverie – šatník', 'Cam Front door': 'Pred vchodom', 'Camera': 'Vstup',
 };
 const OUTSIDE = { 'Cam Exterior SW': 'Exteriér', 'Cam Cutaway': 'Pohľad zhora' };
 
@@ -127,7 +127,7 @@ new GLTFLoader().load('bungalov.glb', gltf => {
     if (!NO_COLLIDE.has(coll)) solidMeshes.push(o);
   });
   buildMenu(views);
-  const start = views.find(v => v.name === 'Cam_Living' || v.name === 'Cam Living') ?? views[0];
+  const start = views.find(v => v.name === 'Cam_Front_door') ?? views[0];
   goTo(start, true);
   document.getElementById('loader').remove();
 }, e => { if (e.total) fill.style.width = (100 * e.loaded / e.total) + '%'; },
