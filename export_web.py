@@ -4,7 +4,7 @@
 import bpy, bmesh, os, json, mathutils
 
 OUT = os.environ.get("WEB_OUT") or os.path.join(os.path.dirname(bpy.data.filepath), "web")
-MAX_TEX = 4096
+MAX_TEX = 1024
 SKIP_COLLS = {"_old furniture", "Lights"}
 
 def visible(o):
@@ -14,7 +14,7 @@ def visible(o):
 
 # ---------- 1. materials: object/generated box mapping -> UV, procedural colour -> baked texture ----------
 BAKE_SIZE = 2.0   # metres of surface covered by one baked tile
-BAKE_RES = 2048
+BAKE_RES = 1024
 sel = [o for o in bpy.context.scene.objects if visible(o) and o.type in {'MESH', 'CURVE', 'CAMERA'}]
 used = {s.material for o in sel if o.type == 'MESH' for s in o.material_slots if s.material and s.material.node_tree}
 
@@ -112,7 +112,7 @@ for o in sel:
     o["coll"] = o.users_collection[0].name
 for img in bpy.data.images:
     if img.size[0] > MAX_TEX and img.type == 'IMAGE':
-        lim = MAX_TEX
+        lim = 2 * MAX_TEX if "4k" in img.name else MAX_TEX
         f = lim / max(img.size)
         if f < 1:
             img.scale(int(img.size[0] * f), int(img.size[1] * f))
@@ -133,7 +133,7 @@ for o in sel:
 bpy.ops.export_scene.gltf(
     filepath=os.path.join(OUT, "bungalov.glb"), export_format='GLB',
     use_selection=True, export_apply=True, export_cameras=True, export_lights=False,
-    export_extras=True, export_image_format='JPEG', export_jpeg_quality=95,
+    export_extras=True, export_image_format='JPEG', export_jpeg_quality=80,
     export_animations=False, export_yup=True,
 )
 print("EXPORTED", len(sel))
