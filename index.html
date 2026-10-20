@@ -156,6 +156,9 @@ function onModel(gltf, first) {
     const name = o.name + ' ' + (o.parent?.name ?? '');
     const isDoorLeaf = coll === 'Doors' && !/frame/i.test(name);
     if (o.material.transmission > 0) o.material.transmission = Math.min(o.material.transmission, 0.9);
+    for (const k of ['map', 'normalMap', 'roughnessMap']) {
+      if (o.material[k]) o.material[k].anisotropy = renderer.capabilities.getMaxAnisotropy(); // sharp floors at grazing angles
+    }
     if (isDoorLeaf) { o.visible = false; return; } // open doorways so you can walk through
     pickMeshes.push(o);
     walkMeshes.push(o);
