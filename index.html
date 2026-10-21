@@ -117,7 +117,7 @@ function floorBelow(x, y, z, maxRise = STEP) {
 }
 
 // ---------- load model ----------
-const STYLES = { povodny: 'bungalov.glb?v=20261021', japandi: 'japandi/bungalov.glb', moderny: 'moderny/bungalov.glb' };
+const STYLES = { povodny: 'bungalov.glb?v=20261021b', japandi: 'japandi/bungalov.glb', moderny: 'moderny/bungalov.glb' };
 let model = null, style = new URLSearchParams(location.search).get('styl') in STYLES
   ? new URLSearchParams(location.search).get('styl') : 'povodny';
 
