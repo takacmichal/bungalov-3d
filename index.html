@@ -37,7 +37,6 @@
 <div id="loader"><div><div id="loadtext">Načítavam model…</div><div class="bar"><div class="fill" id="fill"></div></div></div></div>
 <nav id="rooms"><h1>Miestnosti</h1><div id="list"></div></nav>
 <button id="toggle">☰ Miestnosti</button>
-<div id="style"><button data-style="povodny">Pôvodný</button><button data-style="japandi">Japandi</button><button data-style="moderny">Moderný</button></div>
 <div id="help">Ťahaj myšou = rozhliadanie · klik na podlahu = presun · WASD / šípky = chôdza · koliesko = zoom</div>
 
 <script type="importmap">
@@ -117,7 +116,7 @@ function floorBelow(x, y, z, maxRise = STEP) {
 }
 
 // ---------- load model ----------
-const STYLES = { povodny: 'bungalov.glb?v=20261021b', japandi: 'japandi/bungalov.glb', moderny: 'moderny/bungalov.glb' };
+const STYLES = { povodny: 'bungalov.glb?v=20261021b' };
 let model = null, style = new URLSearchParams(location.search).get('styl') in STYLES
   ? new URLSearchParams(location.search).get('styl') : 'povodny';
 
@@ -169,19 +168,6 @@ function onModel(gltf, first) {
   document.getElementById('loader').remove();
 }
 
-// style switch: swaps the model in place, the camera stays where it is
-const styleBox = document.getElementById('style');
-function markStyle() {
-  styleBox.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.style === style));
-}
-styleBox.querySelectorAll('button').forEach(b => b.onclick = () => {
-  if (b.dataset.style === style || document.getElementById('loader')) return;
-  style = b.dataset.style;
-  history.replaceState(null, '', style === 'povodny' ? location.pathname : '?styl=' + style);
-  markStyle();
-  loadModel(false);
-});
-markStyle();
 loadModel(true);
 
 function labelOf(v) {
