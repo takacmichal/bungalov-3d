@@ -35,6 +35,7 @@
 </head>
 <body>
 <div id="loader"><div><div id="loadtext">Načítavam model…</div><div class="bar"><div class="fill" id="fill"></div></div></div></div>
+<div id="style"><button data-wood="light">Svetlé drevo</button><button data-wood="mid">Stredné</button><button data-wood="dark">Tmavé</button></div>
 <nav id="rooms"><h1>Miestnosti</h1><div id="list"></div></nav>
 <button id="toggle">☰ Miestnosti</button>
 <div id="help">Ťahaj myšou = rozhliadanie · klik na podlahu = presun · WASD / šípky = chôdza · koliesko = zoom</div>
@@ -116,7 +117,7 @@ function floorBelow(x, y, z, maxRise = STEP) {
 }
 
 // ---------- load model ----------
-const STYLES = { povodny: 'bungalov.glb?v=20261021b' };
+const STYLES = { povodny: 'bungalov.glb?v=20261021c' };
 let model = null, style = new URLSearchParams(location.search).get('styl') in STYLES
   ? new URLSearchParams(location.search).get('styl') : 'povodny';
 
@@ -130,6 +131,30 @@ function loadModel(first) {
     e => { if (e.total) bar.style.width = (100 * e.loaded / e.total) + '%'; },
     err => { loader.querySelector('#loadtext').textContent = 'Chyba pri načítaní modelu: ' + err.message; });
 }
+
+// one wood colour for floor + furniture, switchable. The textures keep their grain,
+// material.color (linear) re-tints them from their mean colour to the chosen target.
+const WOOD_MEAN = { 'Oak veneer light': [0.395, 0.256, 0.165], 'Oak planks matched': [0.409, 0.248, 0.170] };
+const WOOD_TARGET = { light: [176, 142, 98], mid: [141, 111, 72], dark: [88, 66, 44] };
+const srgbToLin = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+let wood = new URLSearchParams(location.search).get('drevo') in WOOD_TARGET
+  ? new URLSearchParams(location.search).get('drevo') : 'mid';
+function applyWood() {
+  const t = WOOD_TARGET[wood].map(srgbToLin);
+  model?.traverse(o => {
+    if (!o.isMesh) return;
+    for (const m of [].concat(o.material)) {
+      const mean = WOOD_MEAN[m.name];
+      if (mean) m.color.setRGB(t[0] / mean[0], t[1] / mean[1], t[2] / mean[2]);
+    }
+  });
+  document.querySelectorAll('#style button').forEach(b => b.classList.toggle('active', b.dataset.wood === wood));
+}
+document.querySelectorAll('#style button').forEach(b => b.onclick = () => {
+  wood = b.dataset.wood;
+  history.replaceState(null, '', wood === 'mid' ? location.pathname : '?drevo=' + wood);
+  applyWood();
+});
 
 function onModel(gltf, first) {
   if (model) {
@@ -146,6 +171,7 @@ function onModel(gltf, first) {
   walkMeshes.length = solidMeshes.length = pickMeshes.length = 0;
   const root = model = gltf.scene;
   scene.add(root);
+  applyWood();
   root.updateMatrixWorld(true);
   const views = [];
   root.traverse(o => {
